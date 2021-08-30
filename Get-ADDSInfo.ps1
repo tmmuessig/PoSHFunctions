@@ -33,7 +33,7 @@ $SavePath = Join-Path $FileSavePath $FileSaveName
 $Spacer = $('-'*15)
 
 #For testing only
-Get-ChildItem $FileSavePath -Filter *.txt | remove-item -Force
+#Get-ChildItem $FileSavePath -Filter *.txt | remove-item -Force
 # end for testing
 
 # Get Forest and Domain Information
@@ -60,6 +60,19 @@ Write-Host "Forest Domain Controllers"
 $DomainControllers = $Domains.DNSRoot | ForEach-Object { Get-ADDomainController -filter * -Server $_ }
 $DomainControllers | Select-Object Name, Domain, OperatingSystem | Out-File -FilePath $SavePath -Append
 
+# Get DC Information
+
+$DCInfo = Invoke-Command -ComputerName $DomainControllers -ScriptBlock {
+    $DITPath = Get-ItemProperty -Path "Hklm:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" -Name 'DSA Database file' | Select -ExpandProperty 'DSA DataBase file'
+    [PSCustomObject] @{
+        DITLocation = $DITPath
+        DITSizeInMB = (Get-Item $DITPath).Length / 1MB
+    }
+} | Select DITLocation, DITSizeInMB, PSComputerName
+
+"$Spacer Domain Controller DIT $Spacer" | Out-File -FilePath $SavePath -Append
+$DCInfo | format-table -AutoSize | Out-File -FilePath $SavePath -Append
+
 $T0Groups = @()
 $T0Groups += Get-ADGroup 'Enterprise Admins' -Server $Forest.Name -properties Members | Select-Object Name, DistinguishedName, @{l = 'MemberCount'; e = { $_.Members.Count } }, @{l = 'Domain'; e = { $Forest.Name } }
 $T0Groups += Get-ADGroup 'Schema Admins' -Server $Forest.Name -properties Members | Select-Object Name, DistinguishedName, @{l = 'MemberCount'; e = { $_.Members.Count } }, @{l = 'Domain'; e = { $Forest.Name } }
@@ -68,5 +81,3 @@ $T0Groups += $Domains | ForEach-Object { $tDomain = $_.DNSRoot ; Get-ADGroup 'Do
 "$Spacer Tier 0 Groups $Spacer" | Out-File -FilePath $SavePath -Append
 Write-Host "Tier 0 Groups"
 $T0Groups | Format-Table -AutoSize | Out-File -FilePath $SavePath -Append
-
-
