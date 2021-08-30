@@ -26,6 +26,74 @@ DC Latest Patches
 Last Reboot time for each DC
 #>
 
+Function Get-ADDSDCInfo
+{
+    [CmdletBinding()]
+
+    Param(
+        [Parameter(Mandatory=$true,
+        ValueFromPipeline=$true)]
+        [string[]]
+        $ComputerName
+    )
+
+    Begin {
+        $RegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters"
+        $RegistryKey  = 'DSA Database file'
+    }
+
+    Process
+    {
+        $ADDSData = Invoke-Command -ComputerName $ComputerName -ScriptBlock {
+            #$SYSVOLShare = 
+            $NTDSKey = Get-ItemProperty -Path $using:RegistryPath -Name $Using:RegistryKey
+            [PSCustomObject] @{
+                DITLocation = $NTDSKey.'DSA Database file'
+                DITSizeInMB = (Get-Item $NTDSKey.'DSA Database file').Length / 1MB
+            } 
+        } | Select-Object DITLocation, DITSizeInMB, PSComputerName
+    }
+
+    End
+    {
+        Return $ADDSData 
+    }
+}
+
+Function Get-ADServices
+{
+    [CmdletBinding()]
+    Param
+    (
+        [Parameter(ValueFromPipeline=$true)]
+        [String[]]
+        $ComputerName,
+
+        [Parameter(ValueFromPipeline=$true)]
+        [String[]]
+        $Service,
+
+        [Parameter()]
+        [Switch]
+        $ADServices
+    )
+
+    Begin {}
+
+    Process
+    {
+        If ($ADServices)
+        {
+            $Service +=  @('DNS','DFS', 'DFSR', 'NTDS', 'ADWS', 'GPSVC', 'EventLog', 'W32Time', 'Winmgmt', 'Kdc')
+        }
+        Get-Service $Service -ComputerName $ComputerName | Select MachineName, ServiceName, Status, StartType
+    }
+
+    End {}
+}
+
+
+
 
 $FileSavePath = [Environment]::GetFolderPath('Desktop')
 $FileSaveName = "ADInfo-" + $(Get-Date -Format yyyyMMdd-hhmmss) + ".txt"
@@ -33,7 +101,7 @@ $SavePath = Join-Path $FileSavePath $FileSaveName
 $Spacer = $('-'*15)
 
 #For testing only
-#Get-ChildItem $FileSavePath -Filter *.txt | remove-item -Force
+Get-ChildItem $FileSavePath -Filter *.txt | remove-item -Force
 # end for testing
 
 # Get Forest and Domain Information
@@ -62,16 +130,16 @@ $DomainControllers | Select-Object Name, Domain, OperatingSystem | Out-File -Fil
 
 # Get DC Information
 
-$DCInfo = Invoke-Command -ComputerName $DomainControllers -ScriptBlock {
-    $DITPath = Get-ItemProperty -Path "Hklm:\SYSTEM\CurrentControlSet\Services\NTDS\Parameters" -Name 'DSA Database file' | Select -ExpandProperty 'DSA DataBase file'
-    [PSCustomObject] @{
-        DITLocation = $DITPath
-        DITSizeInMB = (Get-Item $DITPath).Length / 1MB
-    }
-} | Select DITLocation, DITSizeInMB, PSComputerName
+$DCInfo = Get-ADDSDCInfo -ComputerName $DomainControllers.Name
 
 "$Spacer Domain Controller DIT $Spacer" | Out-File -FilePath $SavePath -Append
 $DCInfo | format-table -AutoSize | Out-File -FilePath $SavePath -Append
+
+# Get AD Services
+Write-Host "AD Services"
+$ADServices = Get-ADServices -ADServices -ComputerName $DomainControllers.Name
+"$Spacer AD Services $Spacer" | Out-File -FilePath $SavePath -Append
+$ADServices | ft -AutoSize | Out-File -FilePath $SavePath -Append
 
 $T0Groups = @()
 $T0Groups += Get-ADGroup 'Enterprise Admins' -Server $Forest.Name -properties Members | Select-Object Name, DistinguishedName, @{l = 'MemberCount'; e = { $_.Members.Count } }, @{l = 'Domain'; e = { $Forest.Name } }
@@ -81,3 +149,8 @@ $T0Groups += $Domains | ForEach-Object { $tDomain = $_.DNSRoot ; Get-ADGroup 'Do
 "$Spacer Tier 0 Groups $Spacer" | Out-File -FilePath $SavePath -Append
 Write-Host "Tier 0 Groups"
 $T0Groups | Format-Table -AutoSize | Out-File -FilePath $SavePath -Append
+
+
+notepad $SavePath
+
+
