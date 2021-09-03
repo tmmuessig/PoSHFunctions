@@ -141,6 +141,7 @@ $ADServices = Get-ADServices -ADServices -ComputerName $DomainControllers.Name
 "$Spacer AD Services $Spacer" | Out-File -FilePath $SavePath -Append
 $ADServices | ft -AutoSize | Out-File -FilePath $SavePath -Append
 
+# Tier 0 Groups
 $T0Groups = @()
 $T0Groups += Get-ADGroup 'Enterprise Admins' -Server $Forest.Name -properties Members | Select-Object Name, DistinguishedName, @{l = 'MemberCount'; e = { $_.Members.Count } }, @{l = 'Domain'; e = { $Forest.Name } }
 $T0Groups += Get-ADGroup 'Schema Admins' -Server $Forest.Name -properties Members | Select-Object Name, DistinguishedName, @{l = 'MemberCount'; e = { $_.Members.Count } }, @{l = 'Domain'; e = { $Forest.Name } }
@@ -150,7 +151,16 @@ $T0Groups += $Domains | ForEach-Object { $tDomain = $_.DNSRoot ; Get-ADGroup 'Do
 Write-Host "Tier 0 Groups"
 $T0Groups | Format-Table -AutoSize | Out-File -FilePath $SavePath -Append
 
-
+#Time Service
+"$Spacer Time Service $Spacer" | Out-File -FilePath $SavePath -Append
+$NTPServers = Invoke-Command -ComputerName $DomainControllers.Name -ScriptBlock {
+                $w32tmOutput = & 'w32tm' "/query" "/configuration"
+                [PSCustomObject] @{
+                    NTPType = ($w32tmOutput | Select-String "Type:") -replace "`n","" -replace "`n","" -replace "Type: "
+                    NtpServer = ($w32tmOutput | Select-String "ntpserver:") -replace "`n","" -replace "`n","" -replace "NtpServer: "
+              }
+} | Select NTPType, NtpServer, PSComputerName
+$NTPServers | Select NTPType, NtpServer, PSComputerName | FT -AutoSize | Out-File -FilePath $SavePath -Append
 notepad $SavePath
 
 
