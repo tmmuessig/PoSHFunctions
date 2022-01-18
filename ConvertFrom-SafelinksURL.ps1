@@ -17,13 +17,18 @@
     {
         Foreach ($URL in $SafeLinkURL)
         {
-            $URL = (($URL.Remove(0, 52) -replace '%3A', ':' -replace '%2F', "/") -split "&")[0] 
-            [void]$ConvertedURLs.Add($URL)
+            $URLData = ((([System.Web.HttpUtility]::UrlDecode($url) -split "url=")[1])  -split '&data')[0]
+            $URLUserData = (((([System.Web.HttpUtility]::UrlDecode($url) -split "url=")[1])  -split '&data')[1] -split "\|")[2]
+            $ConvertedURLData = [PSCustomObject]@{
+                URL = $URLData
+                User = $URLUserData
+            }
+            [void]$ConvertedURLs.Add($ConvertedURLData)
         }
     }
 
     End
     {
-        $ConvertedURLs
+        Return $ConvertedURLs
     }
 }
