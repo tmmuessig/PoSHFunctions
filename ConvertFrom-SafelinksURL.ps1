@@ -11,17 +11,18 @@
     Begin
     {
         [System.Collections.ArrayList]$ConvertedURLs = @()
+        Add-Type -AssemblyName System.Web
     }
 
     Process
     {
         Foreach ($URL in $SafeLinkURL)
         {
-            $URLData = ((([System.Web.HttpUtility]::UrlDecode($url) -split "url=")[1])  -split '&data')[0]
-            $URLUserData = (((([System.Web.HttpUtility]::UrlDecode($url) -split "url=")[1])  -split '&data')[1] -split "\|")[2]
+            $BaseURLData = [System.Web.HttpUtility]::UrlDecode($url) -split "\|"
+            $URLData = ($BaseURLData[0] -split "=")[1] -replace "&amp" -replace "[&;]data"
             $ConvertedURLData = [PSCustomObject]@{
-                URL = $URLData
-                User = $URLUserData
+                URL  = $URLData
+                User = $BaseURLData[2]
             }
             [void]$ConvertedURLs.Add($ConvertedURLData)
         }
