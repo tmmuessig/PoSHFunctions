@@ -3,7 +3,7 @@
     [CmdletBinding()]
     Param
     (
-        [Parameter()]
+        [Parameter(ValueFromPipeline = $true)]
         [String[]]
         $SafeLinkURL
     )
