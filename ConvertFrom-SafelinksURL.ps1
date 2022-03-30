@@ -7,7 +7,7 @@
         [String[]]
         $SafeLinkURL
     )
-
+    # https://o365atp.com/
     Begin
     {
         Add-Type -AssemblyName System.Web
