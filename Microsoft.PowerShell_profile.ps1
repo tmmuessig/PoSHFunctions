@@ -22,6 +22,8 @@ function New-CommentBox () {
 
 ################## Set Theme Options ##################
 #Powerline setup https://docs.microsoft.com/en-us/windows/terminal/tutorials/powerline-setup
+#Nerd Font: https://www.nerdfonts.com/font-downloads
+# - Nerd font used: Hack Nerd Font
 
 If ((Get-Host).Name -ne 'Visual Studio Code Host') {
     Import-Module posh-git
