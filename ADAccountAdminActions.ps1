@@ -3,18 +3,30 @@
     [CmdletBinding()]
     Param
     (
-        [Parameter(Mandatory=$true,
-         ValueFromPipeline=$true)]
+        [Parameter(Mandatory = $true,
+            ValueFromPipeline = $true)]
         [String[]]
-        $SamAccountName
+        $SamAccountName,
+
+        [Parameter()]
+        [Switch]
+        $UsePDC
 
     )
 
-    Begin {
+    Begin
+    {
         $Data = [System.Collections.ArrayList]::new()
         Write-Verbose "Getting PDC Emulator"
-        $Server = (Get-ADDomain).PDCEmulator
-        Write-Verbose "Found PDC Emulator - $Server"
+        If ($UsePDC)
+        {
+            $Server = (Get-ADDomain).PDCEmulator
+        }
+        Else
+        {
+            $Server = (Get-ADDomainController).HostName
+        }
+        Write-Verbose "Using Domain Controller - $Server"
     }
 
     Process
@@ -25,18 +37,19 @@
             Try 
             {
                 Write-Verbose "Getting $Account from $Server to determine object type"
-                $Object = Get-ADObject -Filter {SamAccountName -eq $Account} -Properties *
+                $Object = Get-ADObject -Filter { SamAccountName -eq $Account } -Properties *
                 If (-not($Object))
                 {
                     $pcName = $Account + '$'
-                    $Object = Get-ADObject -Filter {SamAccountName -eq $pcName } -Properties *
+                    $Object = Get-ADObject -Filter { SamAccountName -eq $pcName } -Properties *
                 }
                 Switch ($Object.ObjectClass)
                 {
-                    'User'     {$Attribute = 'Drink'}
-                    'Computer' {$Attribute = 'CarLicense'}
+                    'User' { $Attribute = 'Drink' }
+                    'Computer' { $Attribute = 'CarLicense' }
                 }
-                $tData = $Object.$Attribute -split "~" | %{ConvertFrom-Csv $_ -Header "ActionDate","Action","Name"} | Select-Object @{l='Account';e={$Object.Name}}, @{l='SamAccountName';e={$Object.SamAccountName}}, @{l='ActionDate';e={[DateTime]$_.ActionDate}}, Action, Name | Sort ActionDate -Descending
+                Write-Verbose "Using Attribute - $Attribute"
+                $tData = $Object.$Attribute -split "~" | ForEach-Object { ConvertFrom-Csv $_ -Header "ActionDate", "Action", "Name" } | Select-Object @{l = 'Account'; e = { $Object.Name } }, @{l = 'SamAccountName'; e = { $Object.SamAccountName } }, @{l = 'ActionDate'; e = { [DateTime]$_.ActionDate } }, Action, Name | Sort-Object ActionDate -Descending
                 [Void]$Data.Add($tData)
         
             }
@@ -47,10 +60,12 @@
         }
     }
 
-    End {
+    End
+    {
         Return ($Data)
     }
 }
+
 Function Set-ADAccountAdminActions
 {
     [CmdletBinding()]
@@ -58,15 +73,14 @@ Function Set-ADAccountAdminActions
     (
         
         [Parameter(Mandatory = $true,
-         ValueFromPipeline=$true,
-         ValueFromPipelineByPropertyName=$true)]
+            ValueFromPipeline = $true,
+            ValueFromPipelineByPropertyName = $true)]
         [String[]]
         $SamAccountName,
 
         [Parameter()]
         [String]
         $Action
-
 
     )
     Begin
@@ -85,11 +99,11 @@ Function Set-ADAccountAdminActions
             Try 
             {
                 Write-Verbose "Attempting to get $Account from $Server"
-                $Object = Get-ADObject -Filter {SamAccountName -eq $Account} -Properties *
+                $Object = Get-ADObject -Filter { SamAccountName -eq $Account } -Properties *
                 If (-not($Object))
                 {
                     $pcName = $Account + '$'
-                    $Object = Get-ADObject -Filter {SamAccountName -eq $pcName } -Properties *
+                    $Object = Get-ADObject -Filter { SamAccountName -eq $pcName } -Properties *
                 }
             }
             Catch 
@@ -100,11 +114,12 @@ Function Set-ADAccountAdminActions
 
             Switch ($Object.ObjectClass)
             {
-                'User'     {$Attribute = 'Drink'}
-                'Computer' {$Attribute = 'carLicense'}
+                'User' { $Attribute = 'Drink' }
+                'Computer' { $Attribute = 'carLicense' }
             }
+            $isSingleValued = Get-ADObject -Filter { lDAPDisplayName -eq $Attribute } -SearchBase $(Get-ADRootDSE).schemaNamingContext -Properties isSingleValued | Select-Object -ExpandProperty isSingleValued
 
-            $Action = $Action -replace ",",";" # replace any commas entered by the user to preserve the CSV separator
+            $Action = $Action -replace ",", ";" # replace any commas entered by the user to preserve the CSV separator
             $ExistingData = $false
             If (($Object.$Attribute).Length -gt 0)
             {
@@ -113,7 +128,14 @@ Function Set-ADAccountAdminActions
             }
             if ($ExistingData)
             {
-                $NewData = "$EntryDate" + "," + "$Action" + "," + "$env:USERNAME" + "~" + $Object.$Attribute
+                if ($isSingleValued -eq 'true')
+                {
+                    $NewData = "$EntryDate" + "," + "$Action" + "," + "$env:USERNAME" + "~" + $Object.$Attribute
+                }
+                Else
+                {
+                    $NewData = "$EntryDate" + "," + "$Action" + "," + "$env:USERNAME"
+                }
             }
             Else
             {
@@ -122,7 +144,15 @@ Function Set-ADAccountAdminActions
             }
         
             Write-Verbose "Setting $($Object.Name) with $NewData"
-            Set-ADObject $Object -Replace @{$Attribute = $NewData}
+            If ($isSingleValued -eq 'true')
+            {
+                Set-ADObject $Object -Replace @{$Attribute = $NewData }
+            }
+            Else
+            {
+                Set-ADObject $Object -Add @{$Attribute = $NewData }
+            }
+            
         }
     }
 
